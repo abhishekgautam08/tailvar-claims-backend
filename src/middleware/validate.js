@@ -1,4 +1,6 @@
 const { ValidationError } = require('../utils/errors');
+const { isValidCalendarDate } = require('../utils/dates');
+const { parseRupeesToPaise } = require('../utils/money');
 
 const validateLoginInput = (req, res, next) => {
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
@@ -66,7 +68,87 @@ const validateCreatePolicyInput = (req, res, next) => {
   next();
 };
 
+const validateCreateClaimInput = (req, res, next) => {
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return next(new ValidationError('Request body must be a valid JSON object', 'VALIDATION_ERROR'));
+  }
+
+  const allowedKeys = ['policyId', 'incidentDate', 'amount'];
+  const bodyKeys = Object.keys(req.body);
+  const extraKeys = bodyKeys.filter((k) => !allowedKeys.includes(k));
+  if (extraKeys.length > 0) {
+    return next(
+      new ValidationError(
+        `Unexpected field(s) in request body: ${extraKeys.join(', ')}`,
+        'UNEXPECTED_FIELDS'
+      )
+    );
+  }
+
+  const { policyId, incidentDate, amount } = req.body;
+
+  if (!policyId || typeof policyId !== 'string') {
+    return next(new ValidationError('policyId is required and must be a string', 'VALIDATION_ERROR'));
+  }
+
+  if (!incidentDate || typeof incidentDate !== 'string') {
+    return next(new ValidationError('incidentDate is required and must be a string', 'VALIDATION_ERROR'));
+  }
+
+  if (!isValidCalendarDate(incidentDate)) {
+    return next(
+      new ValidationError(
+        'incidentDate must be a valid calendar date in YYYY-MM-DD format',
+        'VALIDATION_ERROR'
+      )
+    );
+  }
+
+  if (amount === undefined || amount === null) {
+    return next(new ValidationError('amount is required', 'VALIDATION_ERROR'));
+  }
+
+  try {
+    // Validate amount format and that amount > 0 via parseRupeesToPaise
+    req.amountPaise = parseRupeesToPaise(amount);
+  } catch (err) {
+    return next(err);
+  }
+
+  next();
+};
+
+const validateClaimDecisionInput = (req, res, next) => {
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return next(new ValidationError('Request body must be a valid JSON object', 'VALIDATION_ERROR'));
+  }
+
+  const allowedKeys = ['decision'];
+  const bodyKeys = Object.keys(req.body);
+  const extraKeys = bodyKeys.filter((k) => !allowedKeys.includes(k));
+  if (extraKeys.length > 0) {
+    return next(
+      new ValidationError(
+        `Unexpected field(s) in request body: ${extraKeys.join(', ')}`,
+        'UNEXPECTED_FIELDS'
+      )
+    );
+  }
+
+  const { decision } = req.body;
+
+  if (typeof decision !== 'string' || !['APPROVED', 'REJECTED'].includes(decision)) {
+    return next(
+      new ValidationError('decision is required and must be APPROVED or REJECTED', 'VALIDATION_ERROR')
+    );
+  }
+
+  next();
+};
+
 module.exports = {
   validateLoginInput,
-  validateCreatePolicyInput
+  validateCreatePolicyInput,
+  validateCreateClaimInput,
+  validateClaimDecisionInput
 };

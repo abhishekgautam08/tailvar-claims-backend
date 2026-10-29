@@ -9,6 +9,7 @@ const startServer = async () => {
     const server = app.listen(config.port, () => {
       console.log(`[Server] Tailvar Claims backend listening on port ${config.port} (${config.nodeEnv})`);
       console.log(`[Server] Health check available at http://localhost:${config.port}/api/health`);
+      console.log('[Server] Note: MongoDB Atlas (replica set) supports multi-document transactions out of the box. Standalone local mongod without --replSet does not support transactions.');
     });
 
     const shutdown = async (signal) => {

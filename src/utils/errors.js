@@ -38,12 +38,25 @@ class NotFoundError extends AppError {
   }
 }
 
+class ConflictError extends AppError {
+  constructor(message = 'Conflict', code = 'CONFLICT') {
+    super(message, 409, code);
+  }
+}
+
+class UnprocessableEntityError extends AppError {
+  constructor(message = 'Unprocessable Entity', code = 'UNPROCESSABLE_ENTITY') {
+    super(message, 422, code);
+  }
+}
+
 module.exports = {
   AppError,
   BadRequestError,
   ValidationError,
   UnauthorizedError,
   ForbiddenError,
-  NotFoundError
+  NotFoundError,
+  ConflictError,
+  UnprocessableEntityError
 };
-

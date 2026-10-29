@@ -45,6 +45,11 @@ const policySchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: [true, 'Creator reference is required']
+    },
+    claimLockVersion: {
+      type: Number,
+      default: 0,
+      select: false
     }
   },
   {
@@ -54,6 +59,7 @@ const policySchema = new mongoose.Schema(
         ret.id = ret._id ? ret._id.toString() : undefined;
         delete ret._id;
         delete ret.__v;
+        delete ret.claimLockVersion;
         return ret;
       }
     }

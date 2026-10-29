@@ -1,11 +1,13 @@
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
-let mongod;
+let replset;
 
 const connect = async () => {
-  mongod = await MongoMemoryServer.create();
-  const uri = mongod.getUri();
+  replset = await MongoMemoryReplSet.create({
+    replSet: { count: 1, storageEngine: 'wiredTiger' }
+  });
+  const uri = replset.getUri();
   await mongoose.connect(uri);
   return uri;
 };
@@ -15,8 +17,8 @@ const closeDatabase = async () => {
     await mongoose.connection.dropDatabase();
     await mongoose.disconnect();
   }
-  if (mongod) {
-    await mongod.stop();
+  if (replset) {
+    await replset.stop();
   }
 };
 
@@ -34,4 +36,3 @@ module.exports = {
   closeDatabase,
   clearDatabase
 };
-

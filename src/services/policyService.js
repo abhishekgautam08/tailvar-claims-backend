@@ -170,23 +170,32 @@ const getPolicies = async (user) => {
 };
 
 /**
+ * Resolves a policy query object from either a MongoDB _id or human-readable policyId.
+ *
+ * @param {string} id
+ * @returns {Object} { _id } or { policyId }
+ */
+const resolvePolicyQuery = (id) => {
+  if (!id || typeof id !== 'string') {
+    throw new BadRequestError('Invalid policy ID format', 'INVALID_POLICY_ID');
+  }
+
+  if (mongoose.Types.ObjectId.isValid(id)) {
+    return { _id: id };
+  } else if (/^POL-\d+$/i.test(id)) {
+    return { policyId: id.toUpperCase() };
+  } else {
+    throw new BadRequestError('Invalid policy ID format', 'INVALID_POLICY_ID');
+  }
+};
+
+/**
  * Retrieves a single policy by MongoDB _id or human-readable policyId.
  * Admin can read any policy. Customer can only read their own.
  * If customer requests another user's policy, returns 404 to avoid leaking existence.
  */
 const getPolicyById = async (id, user) => {
-  if (!id || typeof id !== 'string') {
-    throw new BadRequestError('Invalid policy ID format', 'INVALID_POLICY_ID');
-  }
-
-  let query;
-  if (mongoose.Types.ObjectId.isValid(id)) {
-    query = { _id: id };
-  } else if (/^POL-\d+$/i.test(id)) {
-    query = { policyId: id.toUpperCase() };
-  } else {
-    throw new BadRequestError('Invalid policy ID format', 'INVALID_POLICY_ID');
-  }
+  const query = resolvePolicyQuery(id);
 
   const policy = await Policy.findOne(query).populate('customer', 'username displayName role');
 
@@ -213,6 +222,7 @@ const getPolicyById = async (id, user) => {
 };
 
 module.exports = {
+  resolvePolicyQuery,
   getRemainingSiMap,
   formatPolicy,
   createPolicy,

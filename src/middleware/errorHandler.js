@@ -72,6 +72,9 @@ const errorHandler = (err, req, res, next) => {
       case 409:
         code = 'CONFLICT';
         break;
+      case 422:
+        code = 'UNPROCESSABLE_ENTITY';
+        break;
       case 429:
         code = 'TOO_MANY_REQUESTS';
         break;
