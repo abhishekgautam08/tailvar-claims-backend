@@ -4,6 +4,13 @@ const login = async (req, res, next) => {
   try {
     const { username, password } = req.body;
     const result = await authService.login(username, password);
+    const isProd = process.env.NODE_ENV === 'production';
+    res.cookie('tailvar_auth_token', result.token, {
+      path: '/',
+      sameSite: isProd ? 'none' : 'lax',
+      secure: isProd,
+      maxAge: 24 * 60 * 60 * 1000
+    });
     res.status(200).json(result);
   } catch (error) {
     next(error);
@@ -24,7 +31,12 @@ const getMe = async (req, res, next) => {
 
 const logout = async (req, res, next) => {
   try {
-    // Client-side logout by token discard; server provides protected 204 endpoint
+    const isProd = process.env.NODE_ENV === 'production';
+    res.clearCookie('tailvar_auth_token', {
+      path: '/',
+      sameSite: isProd ? 'none' : 'lax',
+      secure: isProd
+    });
     res.status(204).end();
   } catch (error) {
     next(error);

@@ -5,12 +5,17 @@ const { UnauthorizedError, ForbiddenError } = require('../utils/errors');
 
 const authenticate = async (req, res, next) => {
   try {
+    let token;
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedError('Authentication token required', 'UNAUTHORIZED');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    } else if (req.headers.cookie) {
+      const match = req.headers.cookie.match(/(?:^|;\s*)tailvar_auth_token=([^;]+)/);
+      if (match) {
+        token = decodeURIComponent(match[1]);
+      }
     }
 
-    const token = authHeader.split(' ')[1];
     if (!token) {
       throw new UnauthorizedError('Authentication token required', 'UNAUTHORIZED');
     }
