@@ -81,7 +81,7 @@ const formatClaim = (claim, policy, customer) => {
 
 /**
  * Submits a new claim (CUSTOMER only) with concurrency control.
- * Uses atomic policy locking and MongoDB transactions.
+ * Strictly requires MongoDB transactions. Never silently degrades.
  *
  * @param {Object} data - { policyId, incidentDate, amount }
  * @param {number} amountPaise - pre-validated amount in paise
@@ -94,132 +94,108 @@ const createClaim = async ({ policyId, incidentDate }, amountPaise, user) => {
   // Generate atomic sequential human-readable claimId BEFORE transaction to avoid counter hotspot
   const claimId = await getNextFormattedId('claim', 'CLM-', 4);
 
-  let session = null;
-  let useTransactions = true;
-
+  const session = await mongoose.startSession();
   try {
-    session = await mongoose.startSession();
-  } catch (err) {
-    useTransactions = false;
-  }
+    let result;
+    await session.withTransaction(async () => {
+      // (a) First perform a write on policy document to acquire lock / serialize concurrent requests on this policy
+      const policy = await Policy.findOneAndUpdate(
+        policyQuery,
+        { $inc: { claimLockVersion: 1 } },
+        { new: true, session }
+      ).populate('customer', 'username displayName role');
 
-  const executeClaimSubmission = async (activeSession) => {
-    const sessionOpts = activeSession ? { session: activeSession } : {};
+      if (!policy) {
+        throw new NotFoundError('Policy not found', 'POLICY_NOT_FOUND');
+      }
 
-    // (a) First perform a write on policy document to acquire lock / serialize concurrent requests on this policy
-    const policy = await Policy.findOneAndUpdate(
-      policyQuery,
-      { $inc: { claimLockVersion: 1 } },
-      { new: true, ...sessionOpts }
-    ).populate('customer', 'username displayName role');
+      // Verify ownership: customer can only submit against their OWN policy
+      const policyCustomerId = policy.customer._id
+        ? policy.customer._id.toString()
+        : policy.customer.toString();
 
-    if (!policy) {
-      throw new NotFoundError('Policy not found', 'POLICY_NOT_FOUND');
-    }
+      if (policyCustomerId !== user.id) {
+        // Return 404 to never leak policy existence
+        throw new NotFoundError('Policy not found', 'POLICY_NOT_FOUND');
+      }
 
-    // Verify ownership: customer can only submit against their OWN policy
-    const policyCustomerId = policy.customer._id
-      ? policy.customer._id.toString()
-      : policy.customer.toString();
+      // Validate incident date is within [startDate, endDate] inclusive
+      if (!isWithinInclusive(incidentDate, policy.startDate, policy.endDate)) {
+        throw new UnprocessableEntityError(
+          `Incident date ${incidentDate} is outside policy coverage period (${policy.startDate} to ${policy.endDate})`,
+          'INCIDENT_DATE_OUT_OF_RANGE'
+        );
+      }
 
-    if (policyCustomerId !== user.id) {
-      // Return 404 to never leak policy existence
-      throw new NotFoundError('Policy not found', 'POLICY_NOT_FOUND');
-    }
-
-    // Validate incident date is within [startDate, endDate] inclusive
-    if (!isWithinInclusive(incidentDate, policy.startDate, policy.endDate)) {
-      throw new UnprocessableEntityError(
-        `Incident date ${incidentDate} is outside policy coverage period (${policy.startDate} to ${policy.endDate})`,
-        'INCIDENT_DATE_OUT_OF_RANGE'
-      );
-    }
-
-    // (b) Compute blocked sum via aggregation WITH the session
-    const matchCriteria = {
-      policy: policy._id,
-      status: { $in: ['SUBMITTED', 'APPROVED'] }
-    };
-
-    let agg = Claim.aggregate([
-      { $match: matchCriteria },
-      {
-        $group: {
-          _id: '$policy',
-          totalBlockedPaise: { $sum: '$amountPaise' }
+      // (b) Compute blocked sum via aggregation WITH the session
+      const aggResults = await Claim.aggregate([
+        {
+          $match: {
+            policy: policy._id,
+            status: { $in: ['SUBMITTED', 'APPROVED'] }
+          }
+        },
+        {
+          $group: {
+            _id: '$policy',
+            totalBlockedPaise: { $sum: '$amountPaise' }
+          }
         }
+      ]).session(session);
+
+      const currentBlockedPaise = aggResults.length > 0 ? aggResults[0].totalBlockedPaise : 0;
+      const remainingPaise = Math.max(0, policy.sumInsuredPaise - currentBlockedPaise);
+      const remainingClaimableSi = paiseToRupees(remainingPaise);
+
+      // (c) Validate amount <= remaining claimable SI
+      if (amountPaise > remainingPaise) {
+        throw new UnprocessableEntityError(
+          `Claim amount exceeds remaining claimable sum insured (remaining: ₹${remainingClaimableSi})`,
+          'AMOUNT_EXCEEDS_REMAINING_SI'
+        );
       }
-    ]);
 
-    if (activeSession) {
-      agg = agg.session(activeSession);
+      // (d) Insert the claim with session
+      const createArgs = [
+        {
+          claimId,
+          policy: policy._id,
+          customer: user.id,
+          incidentDate,
+          amountPaise,
+          status: 'SUBMITTED'
+        }
+      ];
+
+      const [newClaim] = await Claim.create(createArgs, { session });
+
+      const newBlockedPaise = currentBlockedPaise + amountPaise;
+      const newRemainingPaise = policy.sumInsuredPaise - newBlockedPaise;
+
+      const policySummary = {
+        id: policy._id.toString(),
+        policyId: policy.policyId,
+        sumInsured: paiseToRupees(policy.sumInsuredPaise),
+        blockedAmount: paiseToRupees(newBlockedPaise),
+        remainingClaimableSi: paiseToRupees(Math.max(0, newRemainingPaise))
+      };
+
+      const formattedClaim = formatClaim(newClaim, policy, policy.customer);
+
+      result = {
+        claim: formattedClaim,
+        policy: policySummary
+      };
+    });
+
+    return result;
+  } catch (error) {
+    if (!error.isOperational) {
+      console.error(`[ClaimService] Transaction failed: ${error.message}`);
     }
-
-    const aggResults = await agg;
-    const currentBlockedPaise = aggResults.length > 0 ? aggResults[0].totalBlockedPaise : 0;
-    const remainingPaise = Math.max(0, policy.sumInsuredPaise - currentBlockedPaise);
-    const remainingClaimableSi = paiseToRupees(remainingPaise);
-
-    // (c) Validate amount <= remaining claimable SI
-    if (amountPaise > remainingPaise) {
-      throw new UnprocessableEntityError(
-        `Claim amount exceeds remaining claimable sum insured (remaining: ₹${remainingClaimableSi})`,
-        'AMOUNT_EXCEEDS_REMAINING_SI'
-      );
-    }
-
-    // (d) Insert the claim with session
-    const createArgs = [
-      {
-        claimId,
-        policy: policy._id,
-        customer: user.id,
-        incidentDate,
-        amountPaise,
-        status: 'SUBMITTED'
-      }
-    ];
-
-    const [newClaim] = await Claim.create(createArgs, sessionOpts);
-
-    const newBlockedPaise = currentBlockedPaise + amountPaise;
-    const newRemainingPaise = policy.sumInsuredPaise - newBlockedPaise;
-
-    const policySummary = {
-      id: policy._id.toString(),
-      policyId: policy.policyId,
-      sumInsured: paiseToRupees(policy.sumInsuredPaise),
-      blockedAmount: paiseToRupees(newBlockedPaise),
-      remainingClaimableSi: paiseToRupees(Math.max(0, newRemainingPaise))
-    };
-
-    const formattedClaim = formatClaim(newClaim, policy, policy.customer);
-
-    return {
-      ...formattedClaim,
-      claim: formattedClaim,
-      policy: policySummary
-    };
-  };
-
-  if (session && useTransactions) {
-    try {
-      let result;
-      await session.withTransaction(async () => {
-        result = await executeClaimSubmission(session);
-      });
-      return result;
-    } catch (err) {
-      // If transactions are not supported by the underlying standalone MongoDB server, fallback gracefully
-      if (err.message && err.message.includes('replica set member')) {
-        return await executeClaimSubmission(null);
-      }
-      throw err;
-    } finally {
-      await session.endSession();
-    }
-  } else {
-    return await executeClaimSubmission(null);
+    throw error;
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -357,7 +333,6 @@ const decideClaim = async (id, decision, adminUserId) => {
   const formattedClaim = formatClaim(updatedClaim, updatedClaim.policy, updatedClaim.customer);
 
   return {
-    ...formattedClaim,
     claim: formattedClaim,
     policy: policySummary
   };
@@ -370,4 +345,3 @@ module.exports = {
   decideClaim,
   formatClaim
 };
-

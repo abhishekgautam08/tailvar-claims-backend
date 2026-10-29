@@ -8,14 +8,17 @@ const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 
+// Enable trust proxy for correct client IP detection and rate limiting behind reverse proxies (e.g. Render)
+app.set('trust proxy', 1);
+
 // Security headers
 app.use(helmet());
 
-// CORS configuration supporting comma-separated origins
+// CORS configuration supporting comma-separated origins, Authorization header, and OPTIONS preflight
 const allowedOrigins = config.getAllowedOrigins();
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+    // Allow requests with no origin (e.g. curl, tests, server-to-server)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
       return callback(null, true);
@@ -29,16 +32,18 @@ const corsOptions = {
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 };
+
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // HTTP request logging (disabled during test runs)
 if (config.nodeEnv !== 'test') {
   app.use(morgan('dev'));
 }
 
-// Body parsers
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Body parsers with 10kb limit
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
 // API routes
 app.use('/api', routes);
@@ -50,4 +55,3 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 module.exports = app;
-

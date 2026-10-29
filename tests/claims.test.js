@@ -84,6 +84,10 @@ describe('Claims API & Concurrency Control', () => {
         });
 
       expect(claim1Res.status).toBe(201);
+      expect(claim1Res.body).toHaveProperty('claim');
+      expect(claim1Res.body).toHaveProperty('policy');
+      expect(claim1Res.body).not.toHaveProperty('claimId');
+      expect(claim1Res.body).not.toHaveProperty('amount');
       expect(claim1Res.body.claim.claimId).toBe('CLM-0001');
       expect(claim1Res.body.claim.status).toBe('SUBMITTED');
       expect(claim1Res.body.policy.sumInsured).toBe(1000000);
@@ -118,6 +122,10 @@ describe('Claims API & Concurrency Control', () => {
         .send({ decision: 'REJECTED' });
 
       expect(rejectClaim1.status).toBe(200);
+      expect(rejectClaim1.body).toHaveProperty('claim');
+      expect(rejectClaim1.body).toHaveProperty('policy');
+      expect(rejectClaim1.body).not.toHaveProperty('claimId');
+      expect(rejectClaim1.body).not.toHaveProperty('status');
       expect(rejectClaim1.body.claim.status).toBe('REJECTED');
       expect(rejectClaim1.body.policy.blockedAmount).toBe(0);
       expect(rejectClaim1.body.policy.remainingClaimableSi).toBe(1000000);

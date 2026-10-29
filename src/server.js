@@ -1,17 +1,38 @@
 const app = require('./app');
 const config = require('./config/env');
-const { connectDB, disconnectDB } = require('./config/db');
+const { validateEnv } = require('./config/env');
+const { connectDB, disconnectDB, verifyTransactionSupport } = require('./config/db');
 
 const startServer = async () => {
   try {
-    await connectDB();
+    // 1. Validate mandatory environment variables at startup
+    try {
+      validateEnv(process.env);
+    } catch (envError) {
+      console.error(`[Startup Error] ${envError.message}`);
+      process.exit(1);
+    }
 
+    // 2. Connect to MongoDB
+    const conn = await connectDB();
+
+    // 3. Verify the connection supports multi-document transactions (replica set or mongos)
+    const supportsTx = await verifyTransactionSupport(conn.connection);
+    if (!supportsTx) {
+      console.error(
+        '[Database Error] MongoDB must be a replica set, e.g. Atlas; transactions are required'
+      );
+      await disconnectDB();
+      process.exit(1);
+    }
+
+    // 4. Start HTTP server
     const server = app.listen(config.port, () => {
       console.log(`[Server] Tailvar Claims backend listening on port ${config.port} (${config.nodeEnv})`);
       console.log(`[Server] Health check available at http://localhost:${config.port}/api/health`);
-      console.log('[Server] Note: MongoDB Atlas (replica set) supports multi-document transactions out of the box. Standalone local mongod without --replSet does not support transactions.');
     });
 
+    // 5. Graceful shutdown handler
     const shutdown = async (signal) => {
       console.log(`\n[Server] Received ${signal}. Gracefully shutting down...`);
       server.close(async () => {
@@ -38,4 +59,3 @@ if (require.main === module) {
 module.exports = {
   startServer
 };
-

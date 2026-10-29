@@ -19,6 +19,13 @@ const errorHandler = (err, req, res, next) => {
     message = 'Malformed JSON in request body';
   }
 
+  // Handle oversized body from body-parser
+  if (err.type === 'entity.too.large' || err.status === 413) {
+    statusCode = 413;
+    code = 'PAYLOAD_TOO_LARGE';
+    message = 'Request payload exceeds the 10kb limit';
+  }
+
   // Handle Mongoose Validation Error
   if (err.name === 'ValidationError') {
     statusCode = 400;
@@ -54,6 +61,13 @@ const errorHandler = (err, req, res, next) => {
     message = 'Token has expired';
   }
 
+  // Log unexpected internal server errors (>= 500) with method and path
+  if (statusCode >= 500) {
+    const reqMethod = req.method || 'UNKNOWN';
+    const reqPath = req.originalUrl || req.url || '';
+    console.error(`[Server Error] [${reqMethod} ${reqPath}]: ${err.stack || err.message}`);
+  }
+
   // Fallback string error code based on status code
   if (!code || typeof code !== 'string') {
     switch (statusCode) {
@@ -72,6 +86,9 @@ const errorHandler = (err, req, res, next) => {
       case 409:
         code = 'CONFLICT';
         break;
+      case 413:
+        code = 'PAYLOAD_TOO_LARGE';
+        break;
       case 422:
         code = 'UNPROCESSABLE_ENTITY';
         break;
@@ -80,10 +97,12 @@ const errorHandler = (err, req, res, next) => {
         break;
       default:
         code = 'INTERNAL_SERVER_ERROR';
-        if (process.env.NODE_ENV === 'production') {
-          message = 'Internal server error';
-        }
     }
+  }
+
+  // Never leak internal error details or stack traces to client in production
+  if (statusCode >= 500 && process.env.NODE_ENV === 'production') {
+    message = 'Internal server error';
   }
 
   res.status(statusCode).json({
@@ -98,4 +117,3 @@ module.exports = {
   notFoundHandler,
   errorHandler
 };
-

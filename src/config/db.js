@@ -31,8 +31,29 @@ const disconnectDB = async () => {
   }
 };
 
-module.exports = {
-  connectDB,
-  disconnectDB
+/**
+ * Checks whether the connected MongoDB instance supports multi-document transactions.
+ * Requires a replica set (e.g. MongoDB Atlas) or mongos (sharded cluster).
+ *
+ * @param {mongoose.Connection} [connection=mongoose.connection]
+ * @returns {Promise<boolean>}
+ */
+const verifyTransactionSupport = async (connection = mongoose.connection) => {
+  try {
+    if (!connection || connection.readyState !== 1) {
+      return false;
+    }
+    const adminDb = connection.db.admin();
+    const hello = await adminDb.command({ hello: 1 });
+    const isReplicaSet = Boolean(hello.setName || hello.msg === 'isdbgrid' || hello.hosts);
+    return isReplicaSet;
+  } catch (error) {
+    return false;
+  }
 };
 
+module.exports = {
+  connectDB,
+  disconnectDB,
+  verifyTransactionSupport
+};
