@@ -28,7 +28,45 @@ const validateLoginInput = (req, res, next) => {
   next();
 };
 
-module.exports = {
-  validateLoginInput
+const validateCreatePolicyInput = (req, res, next) => {
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return next(new ValidationError('Request body must be a valid JSON object', 'VALIDATION_ERROR'));
+  }
+
+  const allowedKeys = ['customerId', 'startDate', 'endDate', 'sumInsured'];
+  const bodyKeys = Object.keys(req.body);
+  const extraKeys = bodyKeys.filter((k) => !allowedKeys.includes(k));
+  if (extraKeys.length > 0) {
+    return next(
+      new ValidationError(
+        `Unexpected field(s) in request body: ${extraKeys.join(', ')}`,
+        'UNEXPECTED_FIELDS'
+      )
+    );
+  }
+
+  const { customerId, startDate, endDate, sumInsured } = req.body;
+
+  if (!customerId || typeof customerId !== 'string') {
+    return next(new ValidationError('customerId is required and must be a string', 'VALIDATION_ERROR'));
+  }
+
+  if (!startDate || typeof startDate !== 'string') {
+    return next(new ValidationError('startDate is required and must be a string', 'VALIDATION_ERROR'));
+  }
+
+  if (!endDate || typeof endDate !== 'string') {
+    return next(new ValidationError('endDate is required and must be a string', 'VALIDATION_ERROR'));
+  }
+
+  if (sumInsured === undefined || sumInsured === null) {
+    return next(new ValidationError('sumInsured is required', 'VALIDATION_ERROR'));
+  }
+
+  next();
 };
 
+module.exports = {
+  validateLoginInput,
+  validateCreatePolicyInput
+};
