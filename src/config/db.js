@@ -6,7 +6,7 @@ const connectDB = async (customUri) => {
   try {
     const conn = await mongoose.connect(uri);
     if (config.nodeEnv !== 'test') {
-      console.log(`[Database] Connected to MongoDB: ${conn.connection.host}/${conn.connection.name}`);
+      console.log(`[Database] Connected to database: ${conn.connection.name} on host: ${conn.connection.host}`);
     }
     return conn;
   } catch (error) {

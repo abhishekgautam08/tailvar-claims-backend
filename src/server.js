@@ -27,9 +27,13 @@ const startServer = async () => {
     }
 
     // 4. Start HTTP server
-    const server = app.listen(config.port, () => {
-      console.log(`[Server] Tailvar Claims backend listening on port ${config.port} (${config.nodeEnv})`);
-      console.log(`[Server] Health check available at http://localhost:${config.port}/api/health`);
+    const port = process.env.PORT || config.port;
+    const host = '0.0.0.0';
+    const server = app.listen(port, host, () => {
+      console.log(`[Server] Tailvar Claims backend listening on ${host}:${port} (${config.nodeEnv})`);
+      console.log(`[Server] Health check available at http://localhost:${port}/api/health`);
+      const origins = config.getAllowedOrigins();
+      console.log(`[CORS] Allowed origins: ${origins.length > 0 ? origins.join(', ') : '(none)'}`);
     });
 
     // 5. Graceful shutdown handler

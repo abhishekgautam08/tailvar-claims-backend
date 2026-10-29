@@ -20,7 +20,8 @@ const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (e.g. curl, tests, server-to-server)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+    const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+    if (allowedOrigins.includes(normalizedOrigin) || allowedOrigins.includes('*')) {
       return callback(null, true);
     }
     const err = new Error(`Origin ${origin} not allowed by CORS`);

@@ -49,7 +49,7 @@ const config = {
   getAllowedOrigins() {
     return this.clientOrigin
       .split(',')
-      .map((origin) => origin.trim())
+      .map((origin) => origin.trim().replace(/\/+$/, ''))
       .filter(Boolean);
   },
 

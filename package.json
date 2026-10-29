@@ -3,10 +3,16 @@
   "version": "1.0.0",
   "description": "Tailvar Claims backend API - Insurance policy & claims management",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed": "node scripts/seed.js",
+    "seed:demo": "node scripts/seed.js --demo",
+    "smoke": "node scripts/smoke-test.js",
+    "reset-demo": "node scripts/reset-demo.js",
     "test": "jest --runInBand --detectOpenHandles"
   },
   "keywords": [
